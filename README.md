@@ -34,6 +34,17 @@ npm run dev
 | `ELEVENLABS_API_KEY` | リアルタイム文字起こし（Scribe v2）に使用 |
 | `NEXT_PUBLIC_BASE_PATH` | サブパスにデプロイする場合のみ設定（通常は空） |
 
+### APIキーの取得
+
+**Gemini (Google AI Studio)**
+1. https://aistudio.google.com/apikey を開く
+2. 「APIキーを作成」→ キーをコピーして `GEMINI_API_KEY` に設定
+
+**ElevenLabs**
+1. https://elevenlabs.io にサインアップ
+2. 右上のアイコン → Profile → API Keys → 「Generate」でキーを作成
+3. コピーして `ELEVENLABS_API_KEY` に設定
+
 ## 構成
 
 ```
