@@ -79,35 +79,52 @@ const typeStyle = {
 };
 
 function SessionBanner({ token }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [copiedClaude, setCopiedClaude] = useState(false);
   const curlCmd = `curl http://localhost:3000/api/session/${token}`;
+  const claudeCmd = `claude "$(curl -s http://localhost:3000/api/session/${token})"`;
 
-  const handleCopy = () => {
+  const handleCopyCurl = () => {
     navigator.clipboard.writeText(curlCmd);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedCurl(true);
+    setTimeout(() => setCopiedCurl(false), 2000);
+  };
+
+  const handleCopyClaude = () => {
+    navigator.clipboard.writeText(claudeCmd);
+    setCopiedClaude(true);
+    setTimeout(() => setCopiedClaude(false), 2000);
   };
 
   return (
     <div className="mb-5 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3">
       <p className="text-xs font-semibold text-indigo-500 mb-1">Claude Code と連携する</p>
-      <p className="text-xs text-indigo-400 mb-2 leading-relaxed">
-        以下のコマンドをClaude Codeに貼り付けると、文字起こしとカードの回答を読み込めます
-      </p>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 text-xs font-mono bg-white border border-indigo-100 rounded-lg px-3 py-2 text-gray-600 truncate">
-          {curlCmd}
-        </code>
-        <button
-          onClick={handleCopy}
-          className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg transition-all ${
-            copied
-              ? "bg-green-100 text-green-600"
-              : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
-          }`}
-        >
-          {copied ? "コピー済み ✓" : "コピー"}
-        </button>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-xs font-mono bg-white border border-indigo-100 rounded-lg px-3 py-2 text-gray-600 truncate">
+            {curlCmd}
+          </code>
+          <button
+            onClick={handleCopyCurl}
+            className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg transition-all ${
+              copiedCurl
+                ? "bg-green-100 text-green-600"
+                : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+            }`}
+          >
+            {copiedCurl ? "✓" : "curl"}
+          </button>
+          <button
+            onClick={handleCopyClaude}
+            className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg transition-all ${
+              copiedClaude
+                ? "bg-green-100 text-green-600"
+                : "bg-gray-900 text-white hover:bg-gray-700"
+            }`}
+          >
+            {copiedClaude ? "✓" : "claude"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -525,24 +542,80 @@ export default function KoekeiPrototype() {
 
   const hasCards = cards.length > 0;
 
+  const broadcastRef = useRef(null);
+  const isRecordingRef = useRef(false);
+
+  // isRecording が変わるたびに ref を更新
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+
+  // BroadcastChannel のセットアップ
+  useEffect(() => {
+    const ch = new BroadcastChannel('koekei-session');
+    broadcastRef.current = ch;
+    ch.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'request-state') {
+        ch.postMessage({
+          type: 'state',
+          cards: cardsRef.current,
+          isRecording: isRecordingRef.current,
+          elapsedSec: elapsedSecRef.current,
+        });
+      } else if (msg.type === 'confirm') {
+        handleConfirm(msg.id, msg.text, msg.yes);
+      } else if (msg.type === 'response') {
+        handleResponse(msg.cardText, msg.reply);
+      } else if (msg.type === 'dismiss') {
+        dismissCard(msg.id);
+      } else if (msg.type === 'toggle-recording') {
+        if (isRecordingRef.current) stopRecording();
+        else startRecording();
+      }
+    };
+    return () => ch.close();
+  }, []); // eslint-disable-line
+
+  // 状態変化のたびにブロードキャスト
+  useEffect(() => {
+    broadcastRef.current?.postMessage({
+      type: 'state',
+      cards,
+      isRecording,
+      elapsedSec,
+      sessionToken,
+    });
+  }, [cards, isRecording, elapsedSec, sessionToken]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ヘッダー */}
-      <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-3">
+        {/* 左：タイトル */}
         <div>
           <h1 className="text-lg font-bold text-gray-900">koekei</h1>
           <p className="text-xs text-gray-400">声から問いが生まれる</p>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* 右：ステータス＋ポップアップボタン */}
+        <div className="flex items-center gap-2 ml-auto">
           {isRecording && (
-            <div className="flex items-center gap-2 text-sm font-mono text-gray-600">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <div className="flex items-center gap-1.5 text-xs font-mono text-gray-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
               {fmt(elapsedSec)}
             </div>
           )}
           {(isProcessing || isUpdatingContext) && (
-            <span className="text-xs text-blue-500 font-medium">処理中...</span>
+            <span className="text-xs text-blue-400">処理中</span>
           )}
+          <button
+            onClick={() => window.open('/compact', 'koekei-compact', 'width=380,height=260,resizable=yes,scrollbars=no')}
+            title="コンパクト表示を開く"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/>
+            </svg>
+          </button>
         </div>
       </header>
 
