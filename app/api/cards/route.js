@@ -1,27 +1,12 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const EMOJI_MAP = {
-  深掘り: "🔍",
-  逆張り: "↩️",
-  具体化: "✨",
-  ズラし: "↗️",
-  問いかけ: "❓",
-  confirmation: "✅",
-  suggestion: "💡",
-  topic_guess: "🎯",
-};
+import { getGeminiModel, extractJson } from '@/lib/gemini';
+import { CARD_EMOJI } from '@/lib/cards';
 
 export async function POST(request) {
   try {
     const formData = await request.formData();
     const audioFile = formData.get('audio');
     const sessionPrompt = formData.get('sessionPrompt') || '';
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not set' }, { status: 500 });
-    }
 
     const arrayBuffer = await audioFile.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString('base64');
@@ -31,10 +16,7 @@ export async function POST(request) {
       ? `## セッションの現在地\n${sessionPrompt}`
       : '## セッションの現在地\nなし（会話開始直後）';
 
-    const multiSpeakerNote = `注意: 音声に複数の話者が含まれる場合は、各話者の立場・意見の違いも考慮してカードを生成してください。`;
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
+    const model = getGeminiModel();
     const result = await model.generateContent([
       audioPart,
       `あなたは発散思考のサポーターです。
@@ -42,7 +24,7 @@ export async function POST(request) {
 
 ${contextSection}
 
-${multiSpeakerNote}
+注意: 音声に複数の話者が含まれる場合は、各話者の立場・意見の違いも考慮してカードを生成してください。
 
 返すJSON形式:
 {
@@ -61,17 +43,13 @@ ${multiSpeakerNote}
 - 必ずJSONのみ返すこと`,
     ]);
 
-    const jsonText = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(jsonText);
+    const parsed = JSON.parse(extractJson(result.response.text()));
+    const cards = (parsed.cards ?? []).map((c) => ({
+      ...c,
+      emoji: CARD_EMOJI[c.type] ?? '💭',
+    }));
 
-    if (parsed.cards) {
-      parsed.cards = parsed.cards.map(c => ({
-        ...c,
-        emoji: EMOJI_MAP[c.type] ?? '💭',
-      }));
-    }
-
-    return NextResponse.json({ cards: parsed.cards ?? [] });
+    return NextResponse.json({ cards });
   } catch (error) {
     console.error('Cards API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

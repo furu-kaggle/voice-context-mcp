@@ -1,30 +1,18 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiModel } from '@/lib/gemini';
+
+const formatList = (items, toLine) =>
+  items.length > 0 ? items.map(toLine).join('\n') : '（まだなし）';
 
 export async function POST(request) {
   try {
     const { confirmed, rejected, responses } = await request.json();
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not set' }, { status: 500 });
-    }
+    const confirmedText = formatList(confirmed, (s) => `- ${s}`);
+    const rejectedText = formatList(rejected, (s) => `- ${s}`);
+    const responsesText = formatList(responses, (r) => `- 提案「${r.card}」→ 「${r.reply}」`);
 
-    const confirmedText = confirmed.length > 0
-      ? confirmed.map(s => `- ${s}`).join('\n')
-      : '（まだなし）';
-
-    const rejectedText = rejected.length > 0
-      ? rejected.map(s => `- ${s}`).join('\n')
-      : '（まだなし）';
-
-    const responsesText = responses.length > 0
-      ? responses.map(r => `- 提案「${r.card}」→ 「${r.reply}」`).join('\n')
-      : '（まだなし）';
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
-
+    const model = getGeminiModel();
     const result = await model.generateContent(`
 以下はユーザーとAIカードのインタラクションログです。
 これを元に、次のカード生成AIが参照する「思考の現在地」ドキュメントを日本語で作成してください。
