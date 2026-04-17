@@ -133,21 +133,37 @@ function CardItem({ item, onConfirm, onResponse }) {
       <p className="text-gray-800 text-sm leading-relaxed font-medium mb-3">{item.card.text}</p>
 
       {isTopicGuess && item.card.choices?.length > 0 && item.confirmed === null && (
-        <div className="grid grid-cols-2 gap-2">
-          {item.card.choices.map((choice, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                onResponse(item.card.text, choice);
-                onConfirm(item.id, choice, true);
-              }}
-              className="text-xs font-medium py-2 px-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100 active:bg-amber-200 transition-colors text-left leading-snug"
-            >{choice}</button>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            {item.card.choices.map((choice, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  onResponse(item.card.text, choice);
+                  onConfirm(item.id, choice, true);
+                }}
+                className="text-xs font-medium py-2 px-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100 active:bg-amber-200 transition-colors text-left leading-snug"
+              >{choice}</button>
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              onResponse(item.card.text, 'どれも違う');
+              onConfirm(
+                item.id,
+                `「${item.card.text}」の選択肢（${item.card.choices.join(' / ')}）はどれも違う`,
+                false
+              );
+            }}
+            className="mt-2 w-full text-xs text-gray-400 hover:text-gray-600 py-1.5 transition-colors"
+          >どれも違う</button>
+        </>
       )}
       {isTopicGuess && item.confirmed === true && (
         <p className="text-xs text-amber-600 font-medium">🎯 {item.confirmedText ?? '選択済み'}</p>
+      )}
+      {isTopicGuess && item.confirmed === false && (
+        <p className="text-xs text-gray-400 font-medium">どれも違う</p>
       )}
 
       {isConfirmation && item.confirmed === null && (

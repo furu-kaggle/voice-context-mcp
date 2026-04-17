@@ -117,18 +117,31 @@ export default function CompactPage() {
             <p className="text-gray-800 text-sm leading-relaxed font-medium mb-3">{pendingCard.card.text}</p>
 
             {isTopicGuess && (
-              <div className="grid grid-cols-2 gap-1.5">
-                {pendingCard.card.choices?.map((choice, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      handleResponse(pendingCard.card.text, choice);
-                      handleConfirm(pendingCard.id, choice, true);
-                    }}
-                    className="text-xs font-medium py-1.5 px-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100 transition-colors text-left leading-snug"
-                  >{choice}</button>
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {pendingCard.card.choices?.map((choice, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        handleResponse(pendingCard.card.text, choice);
+                        handleConfirm(pendingCard.id, choice, true);
+                      }}
+                      className="text-xs font-medium py-1.5 px-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100 transition-colors text-left leading-snug"
+                    >{choice}</button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    handleResponse(pendingCard.card.text, 'どれも違う');
+                    handleConfirm(
+                      pendingCard.id,
+                      `「${pendingCard.card.text}」の選択肢（${(pendingCard.card.choices ?? []).join(' / ')}）はどれも違う`,
+                      false
+                    );
+                  }}
+                  className="mt-1.5 w-full text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
+                >どれも違う</button>
+              </>
             )}
 
             {isConfirmation && (
