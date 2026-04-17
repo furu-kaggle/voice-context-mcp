@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { getCardStyle, getCardLabel, QUICK_CHOICES } from '@/lib/cards';
+import { getCardStyle, getCardLabel } from '@/lib/cards';
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
@@ -54,10 +54,6 @@ export default function CompactPage() {
     setPendingCard(null);
   };
   const handleResponse = (cardText, reply) => bc({ type: 'response', cardText, reply });
-  const handleDismiss = (id) => {
-    bc({ type: 'dismiss', id });
-    setPendingCard(null);
-  };
 
   const style = pendingCard ? getCardStyle(pendingCard.card.type) : null;
   const isConfirmation = pendingCard?.card.type === 'confirmation';
@@ -145,21 +141,6 @@ export default function CompactPage() {
                   onClick={() => handleConfirm(pendingCard.id, pendingCard.card.text, false)}
                   className="flex-1 text-xs font-semibold py-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                 >No</button>
-              </div>
-            )}
-
-            {!isConfirmation && !isTopicGuess && (
-              <div className="flex gap-1.5">
-                {QUICK_CHOICES.map(({ label, signal }) => (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      if (signal) handleResponse(pendingCard.card.text, label);
-                      handleDismiss(pendingCard.id);
-                    }}
-                    className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
-                  >{label}</button>
-                ))}
               </div>
             )}
           </div>

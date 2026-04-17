@@ -26,15 +26,13 @@ ${contextSection}
 {
   "cards": [
     {"type": "topic_guess", "text": "今どんな話題について話してますか？", "choices": ["選択肢A", "選択肢B", "選択肢C", "選択肢D"]},
-    {"type": "confirmation", "text": "〇〇ってこういう理解であってる？"},
-    {"type": "suggestion", "text": "〇〇についても話してみたらどう？"}
+    {"type": "confirmation", "text": "〇〇ってこういう理解であってる？"}
   ]
 }
 
 ルール:
 - topic_guessカード: 音声から推測される話題の候補を4つ提示するもの（毎回1枚。choicesは必ず4つ。話題は短く端的に）
 - confirmationカード: confirmedStatesにまだない重要な認識をyes/noで確認するもの（0〜1枚）
-- suggestionカード: まだ話していない角度・新しい視点の提案（0〜1枚）
 - 音声が完全に無音・無内容の場合のみcardsを空配列にする
 - 必ずJSONのみ返すこと`;
 

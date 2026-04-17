@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { getCardStyle, getCardLabel, QUICK_CHOICES } from '@/lib/cards';
+import { getCardStyle, getCardLabel } from '@/lib/cards';
 
 const CHUNK_SEC = 30;
 const MICRO_CHUNK_SEC = 0.08; // 80ms chunks for realtime transcription
@@ -113,7 +113,7 @@ function SessionBanner({ token }) {
   );
 }
 
-function CardItem({ item, onConfirm, onResponse, onDismiss }) {
+function CardItem({ item, onConfirm, onResponse }) {
   const style = getCardStyle(item.card.type);
   const typeLabel = getCardLabel(item.card.type);
   const isConfirmation = item.card.type === 'confirmation';
@@ -167,21 +167,6 @@ function CardItem({ item, onConfirm, onResponse, onDismiss }) {
       )}
       {isConfirmation && item.confirmed === false && (
         <p className="text-xs text-gray-400 font-medium">✗ 違う</p>
-      )}
-
-      {!isConfirmation && !isTopicGuess && (
-        <div className="flex gap-1.5 mt-1">
-          {QUICK_CHOICES.map(({ label, signal }) => (
-            <button
-              key={label}
-              onClick={() => {
-                if (signal) onResponse(item.card.text, label);
-                onDismiss(item.id);
-              }}
-              className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors"
-            >{label}</button>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -395,7 +380,6 @@ export default function KoekeiPrototype() {
       setIsRecording(true);
 
       connectTranscribeSocket(token);
-      fetchGreetCards(token);
     } catch (e) {
       console.error('[koekei] 音声取得失敗:', e);
       if (e.name === 'NotAllowedError') {
@@ -443,23 +427,6 @@ export default function KoekeiPrototype() {
     ws.onerror = () =>
       setErrorMsg('WebSocket に接続できません。サーバーが起動しているか確認してください。');
     ws.onclose = () => console.log('[koekei] Scribe WS closed');
-  };
-
-  const fetchGreetCards = async (token) => {
-    try {
-      const res = await fetch(`${BASE_PATH}/api/greet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionPrompt: sessionPromptRef.current }),
-      });
-      const data = await res.json();
-      if (sessionTokenRef.current !== token) return;
-      if (data.cards?.length > 0) {
-        showNewCards(data.cards, fmt(0), `greet-${Date.now()}`);
-      }
-    } catch {
-      /* ignore */
-    }
   };
 
   const stopRecording = () => {
@@ -693,7 +660,6 @@ export default function KoekeiPrototype() {
                 item={item}
                 onConfirm={handleConfirm}
                 onResponse={handleResponse}
-                onDismiss={dismissCard}
               />
             ))}
           </div>

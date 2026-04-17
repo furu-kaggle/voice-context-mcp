@@ -4,13 +4,12 @@
 
 ## 概要
 
-マイクまたはタブ音声をリアルタイムで録音し、30秒ごとに Gemini でカードを生成する。生成されるカードは3種類：
+マイクまたはタブ音声をリアルタイムで録音し、30秒ごとに Gemini でカードを生成する。生成されるカードは2種類：
 
 | タイプ | 内容 |
 |---|---|
 | `topic_guess` | 「今どんな話題？」の4択推測 |
 | `confirmation` | 重要な認識の Yes/No 確認 |
-| `suggestion` | 新しい視点・角度の提案 |
 
 文字起こしは ElevenLabs Scribe（WebSocket）でリアルタイム表示。  
 セッション状態は `/api/session/:token` から取得でき、Claude Code などの外部ツールと連携できる。
@@ -55,7 +54,6 @@ app/
   api/
     cards/route.js          # 音声→カード生成（Gemini）
     context/route.js        # セッションコンテキスト要約（Gemini）
-    greet/route.js          # 開始時の最初のカード生成
     session/[token]/route.js # セッション状態の読み書き（外部連携用）
 lib/
   sessionStore.js           # ファイルベースのセッションストア
