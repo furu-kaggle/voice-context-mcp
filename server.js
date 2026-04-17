@@ -10,11 +10,14 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const app = next({ dev, port });
 const handle = app.getRequestHandler();
 
+// Scribe v2 realtime: VAD 方式で自動 commit（無音検出で転写を確定）
+// https://elevenlabs.io/docs/eleven-api/guides/cookbooks/speech-to-text/realtime/transcripts-and-commit-strategies
 const EL_WS_URL =
   'wss://api.elevenlabs.io/v1/speech-to-text/realtime' +
   '?model_id=scribe_v2_realtime' +
   '&audio_format=pcm_16000' +
-  '&language_code=ja';
+  '&language_code=ja' +
+  '&commit_strategy=vad';
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
@@ -50,24 +53,8 @@ app.prepare().then(() => {
       headers: { 'xi-api-key': apiKey },
     });
 
-    // 4秒ごとに commit: true チャンクを送って transcript を強制確定させる
-    // ElevenLabs の manual commit 方式: input_audio_chunk に commit: true を付ける
-    const COMMIT_INTERVAL_MS = 4000;
-    const SILENT_CHUNK = Buffer.alloc(320).toString('base64'); // 160サンプル分の無音 (16kHz, int16)
-    let commitTimer = null;
-
     elWs.on('open', () => {
-      console.log('[scribe] ElevenLabs connected');
-      commitTimer = setInterval(() => {
-        if (elWs.readyState === WebSocket.OPEN) {
-          elWs.send(JSON.stringify({
-            message_type: 'input_audio_chunk',
-            audio_base_64: SILENT_CHUNK,
-            commit: true,
-            sample_rate: 16000,
-          }));
-        }
-      }, COMMIT_INTERVAL_MS);
+      console.log('[scribe] ElevenLabs connected (VAD mode)');
     });
 
     elWs.on('message', (raw) => {
@@ -98,7 +85,6 @@ app.prepare().then(() => {
 
     elWs.on('close', () => {
       console.log('[scribe] ElevenLabs disconnected');
-      clearInterval(commitTimer);
       if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
     });
 
@@ -106,15 +92,13 @@ app.prepare().then(() => {
       console.error('[scribe] ElevenLabs WS error:', err.message);
     });
 
-    // Receive float32 PCM binary from browser → convert to int16 → base64 → ElevenLabs
+    // ブラウザから float32 PCM(16kHz mono) を受け、int16 → base64 に変換して ElevenLabs へ
     clientWs.on('message', (data) => {
       if (elWs.readyState !== WebSocket.OPEN) return;
 
-      // data is a Buffer of float32 PCM at 16kHz mono
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
       const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
 
-      // float32 → int16
       const int16 = new Int16Array(floats.length);
       for (let i = 0; i < floats.length; i++) {
         const s = Math.max(-1, Math.min(1, floats[i]));
@@ -126,14 +110,12 @@ app.prepare().then(() => {
       elWs.send(JSON.stringify({
         message_type: 'input_audio_chunk',
         audio_base_64,
-        commit: false,
         sample_rate: 16000,
       }));
     });
 
     clientWs.on('close', () => {
       console.log('[scribe] client disconnected');
-      clearInterval(commitTimer);
       if (elWs.readyState === WebSocket.OPEN) elWs.close();
     });
 

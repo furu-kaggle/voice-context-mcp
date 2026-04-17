@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGeminiModel, extractJson } from '@/lib/gemini';
+import { generateContent, extractJson } from '@/lib/gemini';
 import { CARD_EMOJI } from '@/lib/cards';
 
 export async function POST(request) {
@@ -10,16 +10,12 @@ export async function POST(request) {
 
     const arrayBuffer = await audioFile.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString('base64');
-    const audioPart = { inlineData: { mimeType: 'audio/wav', data: base64 } };
 
     const contextSection = sessionPrompt
       ? `## セッションの現在地\n${sessionPrompt}`
       : '## セッションの現在地\nなし（会話開始直後）';
 
-    const model = getGeminiModel();
-    const result = await model.generateContent([
-      audioPart,
-      `あなたは発散思考のサポーターです。
+    const prompt = `あなたは発散思考のサポーターです。
 音声を聞いて、以下のJSONのみを返してください（コードブロックなし、前置きなし）。
 
 ${contextSection}
@@ -40,10 +36,14 @@ ${contextSection}
 - confirmationカード: confirmedStatesにまだない重要な認識をyes/noで確認するもの（0〜1枚）
 - suggestionカード: まだ話していない角度・新しい視点の提案（0〜1枚）
 - 音声が完全に無音・無内容の場合のみcardsを空配列にする
-- 必ずJSONのみ返すこと`,
+- 必ずJSONのみ返すこと`;
+
+    const responseText = await generateContent([
+      { inlineData: { mimeType: 'audio/wav', data: base64 } },
+      { text: prompt },
     ]);
 
-    const parsed = JSON.parse(extractJson(result.response.text()));
+    const parsed = JSON.parse(extractJson(responseText));
     const cards = (parsed.cards ?? []).map((c) => ({
       ...c,
       emoji: CARD_EMOJI[c.type] ?? '💭',
