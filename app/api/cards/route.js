@@ -6,14 +6,14 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
     const audioFile = formData.get('audio');
-    const sessionPrompt = formData.get('sessionPrompt') || '';
+    const correctionText = formData.get('correctionText') || '';
 
     const arrayBuffer = await audioFile.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString('base64');
 
-    const contextSection = sessionPrompt
-      ? `## セッションの現在地\n${sessionPrompt}`
-      : '## セッションの現在地\nなし（会話開始直後）';
+    const contextSection = correctionText
+      ? `## これまでの会話の要約（文字起こし補正文）\n${correctionText}`
+      : '## これまでの会話の要約\nなし（会話開始直後）';
 
     const prompt = `あなたは発散思考のサポーターです。
 音声を聞いて、以下のJSONのみを返してください（コードブロックなし、前置きなし）。

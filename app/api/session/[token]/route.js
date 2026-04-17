@@ -20,7 +20,7 @@ export async function POST(request, { params }) {
   await setSession(token, {
     transcriptions: body.transcriptions ?? [],
     cards: body.cards ?? [],
-    sessionPrompt: body.sessionPrompt ?? '',
+    correctionText: body.correctionText ?? '',
   });
   return NextResponse.json({ ok: true });
 }

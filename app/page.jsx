@@ -199,7 +199,7 @@ export default function KoekeiPrototype() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState('cards');
   const [sessionToken, setSessionToken] = useState('');
-  const [sessionPrompt, setSessionPrompt] = useState('');
+  const [correctionText, setCorrectionText] = useState('');
   const [isUpdatingContext, setIsUpdatingContext] = useState(false);
 
   const sessionContextRef = useRef({ confirmed: [], rejected: [], responses: [] });
@@ -212,15 +212,16 @@ export default function KoekeiPrototype() {
   const sendTranscribeRef = useRef(null);
   const wsRef = useRef(null);
   const elapsedSecRef = useRef(0);
-  const sessionPromptRef = useRef('');
+  const correctionTextRef = useRef('');
   const cardsRef = useRef([]);
   const transcriptionsRef = useRef([]);
   const sessionTokenRef = useRef('');
   const broadcastRef = useRef(null);
   const isRecordingRef = useRef(false);
   const contextRequestIdRef = useRef(0);
+  const lastCorrectedIndexRef = useRef(0);
 
-  useEffect(() => { sessionPromptRef.current = sessionPrompt; }, [sessionPrompt]);
+  useEffect(() => { correctionTextRef.current = correctionText; }, [correctionText]);
   useEffect(() => { elapsedSecRef.current = elapsedSec; }, [elapsedSec]);
   useEffect(() => { cardsRef.current = cards; }, [cards]);
   useEffect(() => { transcriptionsRef.current = transcriptions; }, [transcriptions]);
@@ -233,7 +234,7 @@ export default function KoekeiPrototype() {
     const body = {
       transcriptions: transcriptionsRef.current,
       cards: cardsRef.current,
-      sessionPrompt: sessionPromptRef.current,
+      correctionText: correctionTextRef.current,
       ...overrides,
     };
     fetch(`${BASE_PATH}/api/session/${token}`, {
@@ -243,29 +244,39 @@ export default function KoekeiPrototype() {
     }).catch(() => {});
   };
 
-  // 古いレスポンスで新しい値を上書きしないよう requestId で直列化
-  const updateContext = async (newContext) => {
+  // 30s チャンクのたびに呼ばれる。前回以降の文字起こし + confirmed/rejected/responses
+  // をヒントに Gemini が補正文を累積更新する。
+  const updateCorrection = async () => {
+    const cursorBeforeFetch = transcriptionsRef.current.length;
+    const newTranscriptions = transcriptionsRef.current.slice(lastCorrectedIndexRef.current);
+    if (newTranscriptions.length === 0) return;
+
     const requestId = ++contextRequestIdRef.current;
     setIsUpdatingContext(true);
-    const trimmedContext = {
-      confirmed: newContext.confirmed.slice(-RECENT_CONTEXT_WINDOW),
-      rejected: newContext.rejected.slice(-RECENT_CONTEXT_WINDOW),
-      responses: newContext.responses.slice(-RECENT_CONTEXT_WINDOW),
+    const ctx = sessionContextRef.current;
+    const body = {
+      previousCorrection: correctionTextRef.current,
+      newTranscriptions,
+      confirmed: ctx.confirmed.slice(-RECENT_CONTEXT_WINDOW),
+      rejected: ctx.rejected.slice(-RECENT_CONTEXT_WINDOW),
+      responses: ctx.responses.slice(-RECENT_CONTEXT_WINDOW),
     };
+
     try {
       const res = await fetch(`${BASE_PATH}/api/context`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(trimmedContext),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (requestId !== contextRequestIdRef.current) return; // 古いレスポンスは破棄
-      if (res.ok && data.prompt) {
-        setSessionPrompt(data.prompt);
-        syncSession({ sessionPrompt: data.prompt });
+      if (requestId !== contextRequestIdRef.current) return;
+      if (res.ok && data.correction) {
+        setCorrectionText(data.correction);
+        lastCorrectedIndexRef.current = cursorBeforeFetch;
+        syncSession({ correctionText: data.correction });
       }
     } catch (e) {
-      console.error('[koekei] context更新エラー:', e);
+      console.error('[koekei] correction更新エラー:', e);
     } finally {
       if (requestId === contextRequestIdRef.current) setIsUpdatingContext(false);
     }
@@ -294,9 +305,12 @@ export default function KoekeiPrototype() {
 
         const cardsForm = new FormData();
         cardsForm.append('audio', audioBlob, 'audio.wav');
-        cardsForm.append('sessionPrompt', sessionPromptRef.current);
+        cardsForm.append('correctionText', correctionTextRef.current);
 
-        const cardsRes = await fetch(`${BASE_PATH}/api/cards`, { method: 'POST', body: cardsForm });
+        const [cardsRes] = await Promise.all([
+          fetch(`${BASE_PATH}/api/cards`, { method: 'POST', body: cardsForm }),
+          updateCorrection(),
+        ]);
         if (sessionTokenRef.current !== capturedToken) return;
 
         const cardsData = await cardsRes.json();
@@ -341,7 +355,9 @@ export default function KoekeiPrototype() {
     setCards([]);
     setTranscriptions([]);
     sessionContextRef.current = { confirmed: [], rejected: [], responses: [] };
-    setSessionPrompt('');
+    setCorrectionText('');
+    correctionTextRef.current = '';
+    lastCorrectedIndexRef.current = 0;
     chunkCountRef.current = 0;
     setElapsedSec(0);
   };
@@ -473,6 +489,8 @@ export default function KoekeiPrototype() {
     }, 500);
   };
 
+  // カード操作は反応ログに蓄えるだけ。補正文の更新は 30s チャンクの
+  // updateCorrection で一括してまとめて反映される。
   const handleConfirm = (id, text, yes) => {
     setCards((prev) => {
       const next = prev.map((c) =>
@@ -485,18 +503,14 @@ export default function KoekeiPrototype() {
     });
     setTimeout(() => dismissCard(id), 900);
     const ctx = sessionContextRef.current;
-    const nextCtx = yes
+    sessionContextRef.current = yes
       ? { ...ctx, confirmed: [...ctx.confirmed, text] }
       : { ...ctx, rejected: [...ctx.rejected, text] };
-    sessionContextRef.current = nextCtx;
-    updateContext(nextCtx);
   };
 
   const handleResponse = (cardText, reply) => {
     const ctx = sessionContextRef.current;
-    const nextCtx = { ...ctx, responses: [...ctx.responses, { card: cardText, reply }] };
-    sessionContextRef.current = nextCtx;
-    updateContext(nextCtx);
+    sessionContextRef.current = { ...ctx, responses: [...ctx.responses, { card: cardText, reply }] };
   };
 
   // BroadcastChannel: compact popup と双方向同期
@@ -656,7 +670,7 @@ export default function KoekeiPrototype() {
 
         {hasCards && (
           <div className="flex gap-1 mb-4 p-1 bg-gray-100 rounded-full">
-            {[['cards', 'カード'], ['context', '思考の現在地']].map(([val, label]) => (
+            {[['cards', 'カード'], ['context', '文字起こし補正文']].map(([val, label]) => (
               <button
                 key={val}
                 onClick={() => setActiveTab(val)}
@@ -684,15 +698,15 @@ export default function KoekeiPrototype() {
         {activeTab === 'context' && (
           <div className="px-4 py-4 bg-white border border-gray-100 rounded-2xl">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-gray-500">思考の現在地</p>
+              <p className="text-xs font-semibold text-gray-500">文字起こし補正文</p>
               {isUpdatingContext && (
                 <span className="text-xs text-blue-400 animate-pulse">更新中...</span>
               )}
             </div>
-            {sessionPrompt ? (
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{sessionPrompt}</p>
+            {correctionText ? (
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{correctionText}</p>
             ) : (
-              <p className="text-sm text-gray-300">カードにYes/Noを答えたり、提案に補足を送ると更新されます</p>
+              <p className="text-sm text-gray-300">30秒ごとに文字起こしが補正・整理されて累積表示されます</p>
             )}
           </div>
         )}
