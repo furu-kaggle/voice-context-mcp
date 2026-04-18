@@ -7,6 +7,7 @@ const CHUNK_SEC = 30;
 const MICRO_CHUNK_SEC = 0.08; // 80ms chunks for realtime transcription
 const TARGET_SAMPLE_RATE = 16000;
 const RECENT_CONTEXT_WINDOW = 6;
+const CORRECTION_OVERLAP_BEFORE = 3; // 前チャンクとのオーバーラップ件数（コンテクスト用）
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 const getScribeWsUrl = () => {
@@ -244,19 +245,21 @@ export default function KoekeiPrototype() {
     }).catch(() => {});
   };
 
-  // 30s チャンクのたびに呼ばれる。前回以降の文字起こし + confirmed/rejected/responses
-  // をヒントに Gemini が補正文を累積更新する。
+  // 30s チャンクのたびに呼ばれる。トリガー位置の前後（オーバーラップ込み）の
+  // 文字起こしを窓として渡し、Gemini に補正フラグメントを生成させる。
+  // 出力はそのまま correctionText の末尾に append される（重複 OK）。
   const updateCorrection = async () => {
-    const cursorBeforeFetch = transcriptionsRef.current.length;
-    const newTranscriptions = transcriptionsRef.current.slice(lastCorrectedIndexRef.current);
-    if (newTranscriptions.length === 0) return;
+    const totalCount = transcriptionsRef.current.length;
+    if (totalCount <= lastCorrectedIndexRef.current) return; // 新規なし
+
+    const windowStart = Math.max(0, lastCorrectedIndexRef.current - CORRECTION_OVERLAP_BEFORE);
+    const transcriptionWindow = transcriptionsRef.current.slice(windowStart, totalCount);
 
     const requestId = ++contextRequestIdRef.current;
     setIsUpdatingContext(true);
     const ctx = sessionContextRef.current;
     const body = {
-      previousCorrection: correctionTextRef.current,
-      newTranscriptions,
+      transcriptionWindow,
       confirmed: ctx.confirmed.slice(-RECENT_CONTEXT_WINDOW),
       rejected: ctx.rejected.slice(-RECENT_CONTEXT_WINDOW),
       responses: ctx.responses.slice(-RECENT_CONTEXT_WINDOW),
@@ -270,10 +273,14 @@ export default function KoekeiPrototype() {
       });
       const data = await res.json();
       if (requestId !== contextRequestIdRef.current) return;
-      if (res.ok && data.correction) {
-        setCorrectionText(data.correction);
-        lastCorrectedIndexRef.current = cursorBeforeFetch;
-        syncSession({ correctionText: data.correction });
+      if (res.ok && data.fragment) {
+        setCorrectionText((prev) => {
+          const next = prev ? `${prev}\n\n${data.fragment}` : data.fragment;
+          correctionTextRef.current = next;
+          syncSession({ correctionText: next });
+          return next;
+        });
+        lastCorrectedIndexRef.current = totalCount;
       }
     } catch (e) {
       console.error('[koekei] correction更新エラー:', e);

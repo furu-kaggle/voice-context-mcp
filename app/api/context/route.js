@@ -7,17 +7,19 @@ const formatList = (items, toLine) =>
 export async function POST(request) {
   try {
     const {
-      previousCorrection = '',
-      newTranscriptions = [],
+      transcriptionWindow = [],
       confirmed = [],
       rejected = [],
       responses = [],
     } = await request.json();
 
-    const newTranscriptText =
-      newTranscriptions.length > 0
-        ? newTranscriptions.map((t) => `[${t.timestamp}] ${t.text}`).join('\n')
-        : '（なし）';
+    if (transcriptionWindow.length === 0) {
+      return NextResponse.json({ fragment: '' });
+    }
+
+    const windowText = transcriptionWindow
+      .map((t) => `[${t.timestamp}] ${t.text}`)
+      .join('\n');
 
     const confirmedText = formatList(confirmed, (s) => `- ${s}`);
     const rejectedText = formatList(rejected, (s) => `- ${s}`);
@@ -25,13 +27,11 @@ export async function POST(request) {
 
     const prompt = `
 あなたは会話の文字起こしを構造化・補正するエディタです。
-以下の「前回までの補正文」に、新しい文字起こしを統合して累積更新してください。
+以下の「文字起こし窓（前後のコンテキスト込み）」を補正・整理した Markdown 断片を返してください。
+この出力は既存の補正文末尾にそのまま追記されます（過去との重複があっても構いません）。
 
-## 前回までの補正文
-${previousCorrection || '（まだなし）'}
-
-## 新しい文字起こし（誤認識を含む生のテキスト）
-${newTranscriptText}
+## 文字起こし窓
+${windowText}
 
 ## ユーザーが確認した事実（補正のヒント）
 ${confirmedText}
@@ -45,18 +45,16 @@ ${responsesText}
 ---
 
 ルール:
-- 話題ごとに見出し（## トピック名）＋箇条書きで構造化
-- 「ユーザーが確認した事実」を正とみなし、生の文字起こしの誤認識を補正すること（例: 「データバス」→「データベース」）
-- 「否定された仮説」に該当する内容は除外または明示的に訂正
+- 話題ごとに見出し（## トピック名）＋箇条書き
+- 「ユーザーが確認した事実」を正として誤認識を補正（例: 「データバス」→「データベース」）
 - フィラー（えーと、あのー、あー等）は除去
-- 同じ内容の重複はまとめる
-- 話題が進展した場合は既存トピックの箇条書きを更新・追記
-- 1000字以内
-- Markdownのみを返すこと（前置き・コードブロックなし）
+- 前後のコンテキストを踏まえた上で、この窓で話された内容を整理
+- 窓に内容が乏しければ短くて良い
+- Markdown のみを返すこと（前置き・コードブロックなし）
 `;
 
     const responseText = await generateContent(prompt);
-    return NextResponse.json({ correction: responseText.trim() });
+    return NextResponse.json({ fragment: responseText.trim() });
   } catch (error) {
     console.error('Context API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
